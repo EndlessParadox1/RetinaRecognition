@@ -1,6 +1,7 @@
 import redis
 import torch
 import numpy as np
+import torch.nn.functional as F
 from PIL import Image
 from torch import nn
 from torchvision import models, transforms
@@ -114,7 +115,7 @@ class SiameseNet(nn.Module):
 
 siameseNet = torch.load('model.pth', map_location='cpu')
 siameseNet.eval()
-redis_client = redis.StrictRedis(host='arch', port=6379, db=1)
+redis_client = redis.StrictRedis(host='48.216.251.241', password='2396')
 transform1 = transforms.Compose([transforms.Resize((192, 288)), transforms.ToTensor()])
 transform2 = transforms.Compose([transforms.Resize((100, 150)), transforms.Normalize((0.5,), (0.5,))])
 
@@ -164,14 +165,17 @@ while True:
         case '2':
             image_path = input("请输入要识别的图片路径: ")
             query_feature = process_image(image_path)
-            min_dist, min_name = float('inf'), None
+            min_dist, min_name, similarity = float('inf'), None, 0.0
             for name in redis_client.keys():
                 feature_vector = get_feature(name)
                 distance = torch.pairwise_distance(feature_vector, query_feature)
                 if distance < min_dist:
                     min_dist = distance
                     min_name = name.decode()
+                    cosine_similarity = F.cosine_similarity(query_feature, feature_vector, dim=1)
+                    similarity = (cosine_similarity.item() + 1) * 50
             print("识别结果为: ", min_name)
+            print("相似度为: %.2f%%" % similarity)
         case '3':
             print("程序退出!")
             break

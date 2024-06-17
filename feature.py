@@ -4,6 +4,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torchvision import models, transforms
 from PIL import Image
 from torch import nn, optim
@@ -158,6 +159,7 @@ correct = 0
 with torch.no_grad():
     for fn, label in fn_labels:
         dist_min, label_min, fn_min = float('inf'), None, None
+        similarity = 0.0
         img1 = transform(Image.open(fn)).unsqueeze(0).to(device)
         for fn2, label2 in fn_labels:
             if fn == fn2:
@@ -169,8 +171,10 @@ with torch.no_grad():
                 dist_min = dist.item()
                 label_min = label2
                 fn_min = fn2
+                cosine_similarity = F.cosine_similarity(pre_o1, pre_o2, dim=1)
+                similarity = (cosine_similarity.item() + 1) * 50
         correct += int(label == label_min)
-        showImage('Similarity: %.2f' % dist_min, fn, fn_min)
+        showImage('Similarity: %.2f%%' % dist_min, fn, fn_min)
 
 
 print('一共测试了{}张图片，准确率为{:.1f}%'.format(len(fn_labels), 100. * correct/len(fn_labels)))
