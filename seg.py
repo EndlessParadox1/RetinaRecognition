@@ -8,12 +8,19 @@ from torch import nn, optim
 from torch.utils.data import Dataset, DataLoader
 
 
+"""
+眼底分管分割网络，基于UNet
+"""
+
+# 设置设备
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+# 定义卷积模块
 class OneModule(nn.Module):
     def __init__(self, n1, n2):
         super().__init__()
+        # 定义卷积层、批量归一化和激活函数
         self.cnn = nn.Sequential(
             nn.Conv2d(n1, n2, 3, padding=1, bias=False),
             nn.BatchNorm2d(n2),
@@ -27,15 +34,18 @@ class OneModule(nn.Module):
         return self.cnn(x_)
 
 
+# 定义U-Net网络结构
 class UNet(nn.Module):
     def __init__(self, n1, n2):
         super().__init__()
+        # 定义下采样部分
         self.cnn1 = OneModule(n1, 64)
         self.cnn2 = OneModule(64, 128)
         self.cnn3 = OneModule(128, 256)
         self.cnn4 = OneModule(256, 512)
         self.bottleneck = OneModule(512, 1024)
         self.pool = nn.MaxPool2d(2, 2)
+        # 定义上采样部分
         self.ucnn4 = OneModule(1024, 512)
         self.ucnn3 = OneModule(512, 256)
         self.ucnn2 = OneModule(256, 128)
@@ -86,6 +96,7 @@ class UNet(nn.Module):
         return o
 
 
+# 定义数据集类
 class GetDataset(Dataset):
     def __init__(self, img_dir, mask_dir, train_mode=True):
         self.img_dir = img_dir
@@ -111,13 +122,18 @@ class GetDataset(Dataset):
         return img_, mask_
 
 
+# 定义图像预处理方法
 transform = transforms.Compose([transforms.Resize((288, 288)), transforms.ToTensor()])
+
+# 创建U-Net模型并定义优化器
 unet_model = UNet(3, 1).to(device)
 optimizer = optim.Adam(unet_model.parameters(), lr=1e-3)
 
-
-train_dataset = GetDataset(img_dir='data/train/images/',  mask_dir='data/train/masks')
+# 加载训练数据集
+train_dataset = GetDataset(img_dir='data/train/images/', mask_dir='data/train/masks')
 train_loader = DataLoader(train_dataset, batch_size=8, pin_memory=True, shuffle=True)
+
+# 训练U-Net模型
 for ep in range(100):
     for i, (x, y) in enumerate(train_loader):
         x, y = x.to(device), y.to(device)
@@ -130,6 +146,7 @@ for ep in range(100):
         optimizer.step()
 
 
+# 定义显示图像的辅助函数
 def showTwoimgs(imgs_, rows, cols):
     figure, ax = plt.subplots(rows, cols)
     for idx, title in enumerate(imgs_):
@@ -140,7 +157,7 @@ def showTwoimgs(imgs_, rows, cols):
     plt.show()
 
 
-# unet_model = torch.load('seg.pth', map_location=device)
+# 评估U-Net模型
 unet_model.eval()
 val_dataset = GetDataset(img_dir='data/test/images', mask_dir='data/test/masks', train_mode=False)
 val_loader = DataLoader(val_dataset, batch_size=8, pin_memory=True, shuffle=True)
@@ -162,5 +179,7 @@ with torch.no_grad():
         imgs['Original mask'] = np.array(mask)
         imgs['Predictive mask'] = np.array(pre_mask)
         showTwoimgs(imgs, 1, 2)
-print(f"准确率为: {100. * num_correct/num_pixels:.2f}%")
-print(f"指标Dice score的值为: {dice_score/len(val_loader):.2f}")
+
+# 打印结果
+print(f"准确率为: {100. * num_correct / num_pixels:.2f}%")
+print(f"指标Dice score的值为: {dice_score / len(val_loader):.2f}")

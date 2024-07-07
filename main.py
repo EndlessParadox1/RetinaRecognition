@@ -5,8 +5,14 @@ import torch.nn.functional as F
 from PIL import Image
 from torch import nn
 from torchvision import models, transforms
+from torchvision.models import VGG19_Weights
+
+"""
+简单命令行程序
+"""
 
 
+# 定义一个卷积模块
 class OneModule(nn.Module):
     def __init__(self, n1, n2):
         super().__init__()
@@ -23,6 +29,7 @@ class OneModule(nn.Module):
         return self.cnn(x_)
 
 
+# 定义一个UNet模型
 class UNet(nn.Module):
     def __init__(self, n1, n2):
         super().__init__()
@@ -44,57 +51,61 @@ class UNet(nn.Module):
 
     def forward(self, x_):
         skip_cons = []
-        d1 = x_
-        d1 = self.cnn1(d1)
+        d1 = self.cnn1(x_)
         skip_cons.append(d1)
         d1 = self.pool(d1)
-        d2 = d1
-        d2 = self.cnn2(d2)
+
+        d2 = self.cnn2(d1)
         skip_cons.append(d2)
         d2 = self.pool(d2)
-        d3 = d2
-        d3 = self.cnn3(d3)
+
+        d3 = self.cnn3(d2)
         skip_cons.append(d3)
         d3 = self.pool(d3)
-        d4 = d3
-        d4 = self.cnn4(d4)
+
+        d4 = self.cnn4(d3)
         skip_cons.append(d4)
         d4 = self.pool(d4)
-        bo = d4
-        bo = self.bottleneck(bo)
-        u4 = bo
-        u4 = self.contr4(u4)
+
+        bo = self.bottleneck(d4)
+
+        u4 = self.contr4(bo)
         u4 = torch.cat((skip_cons[3], u4), dim=1)
         u4 = self.ucnn4(u4)
-        u3 = u4
-        u3 = self.contr3(u3)
+
+        u3 = self.contr3(u4)
         u3 = torch.cat((skip_cons[2], u3), dim=1)
         u3 = self.ucnn3(u3)
-        u2 = u3
-        u2 = self.contr2(u2)
+
+        u2 = self.contr2(u3)
         u2 = torch.cat((skip_cons[1], u2), dim=1)
         u2 = self.ucnn2(u2)
-        u1 = u2
-        u1 = self.contr1(u1)
+
+        u1 = self.contr1(u2)
         u1 = torch.cat((skip_cons[0], u1), dim=1)
         u1 = self.ucnn1(u1)
+
         o = self.conv1_1(u1)
         return o
 
 
+# 加载训练好的UNet模型
 processNet = torch.load('seg.pth', map_location='cpu')
 processNet.eval()
-vgg19 = models.vgg19()
+
+# 加载预训练的VGG19模型特征提取部分
+vgg19 = models.vgg19(weights=VGG19_Weights.DEFAULT)
 vgg19_cnn = vgg19.features
 
 
+# 定义Siamese Network
 class SiameseNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.cnn = nn.Sequential(
             nn.ReflectionPad2d(1),
             nn.Conv2d(1, 3, 3, padding=1),
-            vgg19_cnn,  # (3, 102, 152) -> (512, 3, 4)
+            vgg19_cnn,  # 使用VGG19的特征提取部分
             nn.ReLU(True),
             nn.BatchNorm2d(512)
         )
@@ -113,13 +124,19 @@ class SiameseNet(nn.Module):
         return o
 
 
+# 加载训练好的Siamese Network模型
 siameseNet = torch.load('model.pth', map_location='cpu')
 siameseNet.eval()
-redis_client = redis.StrictRedis(host='48.216.251.241', password='2396')
+
+# 连接Redis数据库
+redis_client = redis.StrictRedis(host='arch', db=1)
+
+# 定义图像变换
 transform1 = transforms.Compose([transforms.Resize((192, 288)), transforms.ToTensor()])
 transform2 = transforms.Compose([transforms.Resize((100, 150)), transforms.Normalize((0.5,), (0.5,))])
 
 
+# 图像预处理函数
 def process_image(img_path):
     """
     对输入的图像进行预处理，并获取其特征向量
@@ -134,6 +151,7 @@ def process_image(img_path):
     return fea_vec
 
 
+# 存储特征向量到Redis
 def store_feature(name_, fea_vec):
     """
     将特征向量存储到 Redis数据库中
@@ -141,6 +159,8 @@ def store_feature(name_, fea_vec):
     fea_bytes = fea_vec.numpy().tobytes()
     redis_client.set(name_, fea_bytes)
 
+
+# 从Redis获取特征向量
 def get_feature(name_):
     """
     从 Redis数据库中获取特征向量
@@ -150,6 +170,7 @@ def get_feature(name_):
     return torch.from_numpy(fea_array).unsqueeze(0)
 
 
+# 简单命令行交互程序
 while True:
     print("请选择功能:")
     print("1.输入(存储特征值)")

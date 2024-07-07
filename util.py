@@ -5,12 +5,19 @@ from torch import nn
 from PIL import Image
 
 
+"""
+利用血管分割网络，预处理特征向量生成网络的训练集和测试集
+"""
+
+# 设置设备
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+# 定义卷积模块
 class OneModule(nn.Module):
     def __init__(self, n1, n2):
         super().__init__()
+        # 定义卷积层、批量归一化和激活函数
         self.cnn = nn.Sequential(
             nn.Conv2d(n1, n2, 3, padding=1, bias=False),
             nn.BatchNorm2d(n2),
@@ -24,15 +31,18 @@ class OneModule(nn.Module):
         return self.cnn(x_)
 
 
+# 定义U-Net网络结构
 class UNet(nn.Module):
     def __init__(self, n1, n2):
         super().__init__()
+        # 定义下采样部分
         self.cnn1 = OneModule(n1, 64)
         self.cnn2 = OneModule(64, 128)
         self.cnn3 = OneModule(128, 256)
         self.cnn4 = OneModule(256, 512)
         self.bottleneck = OneModule(512, 1024)
         self.pool = nn.MaxPool2d(2, 2)
+        # 定义上采样部分
         self.ucnn4 = OneModule(1024, 512)
         self.ucnn3 = OneModule(512, 256)
         self.ucnn2 = OneModule(256, 128)
@@ -83,22 +93,27 @@ class UNet(nn.Module):
         return o
 
 
+# 定义图像预处理方法
 transform = transforms.Compose([transforms.Resize((192, 288)), transforms.ToTensor()])
+
+# 加载预训练模型
 model = torch.load('seg.pth', map_location=device)
 model.eval()
 
 
+# 定义处理单张图像的函数
 def process_image(image_path, model_):
     img = Image.open(image_path).convert('RGB')
-    img = transform(img).unsqueeze(0)
+    img = transform(img).unsqueeze(0)  # 添加批次维度
     with torch.no_grad():
         out = model_(img)
         out = torch.sigmoid(out)
-        out_mask = (out >= 0.1).float()
-    out_mask = transforms.ToPILImage()(out_mask.squeeze())
+        out_mask = (out >= 0.1).float()  # 阈值分割
+    out_mask = transforms.ToPILImage()(out_mask.squeeze())  # 转换为PIL图像
     return out_mask
 
 
+# 定义处理整个目录的函数
 def process_dir(input_dir, output_dir, model_):
     for root, _, files in os.walk(input_dir):
         for file in files:
@@ -106,6 +121,8 @@ def process_dir(input_dir, output_dir, model_):
             relative_path = os.path.relpath(imgPath, input_dir)
             outputPath = os.path.join(output_dir, relative_path)
             output = process_image(imgPath, model_)
+            # 创建输出目录
+            os.makedirs(os.path.dirname(outputPath), exist_ok=True)
             output.save(outputPath)
 
 

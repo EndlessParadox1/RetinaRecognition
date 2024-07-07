@@ -9,12 +9,18 @@ from torchvision import models, transforms
 from PIL import Image
 from torch import nn, optim
 from torch.utils.data import Dataset, DataLoader
+from torchvision.models import VGG19_Weights
 
+"""
+视网膜的特征向量生成网络，基于孪生网络
+"""
 
+# 设置随机种子和设备
 random.seed(time.time())
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+# 获取文件名和标签
 def getFn_Labels(path1):
     file_labels = []
     for dir_ in os.listdir(path1):
@@ -26,6 +32,7 @@ def getFn_Labels(path1):
     return file_labels
 
 
+# 图像预处理
 transform = transforms.Compose(
     [transforms.Resize(100),
      transforms.Grayscale(1),
@@ -33,13 +40,15 @@ transform = transforms.Compose(
      transforms.Normalize((0.5,), (0.5,))])
 
 
+# 自定义数据集
 class RetinaDataset(Dataset):
     def __init__(self, fn_labels_):
         self.fn_labels = fn_labels_
 
     def __getitem__(self, idx):
         img1_, label1 = self.fn_labels[idx]
-        if random.randint(0, 1):  # 生成同类的三元组
+        # 生成同类的三元组
+        if random.randint(0, 1):
             k = idx + 1
             while True:
                 if k >= len(self.fn_labels):
@@ -48,7 +57,8 @@ class RetinaDataset(Dataset):
                 k += 1
                 if label1 == label2_:
                     break
-        else:  # 生成不同类的三元组
+        # 生成不同类的三元组
+        else:
             k = idx + 1
             while True:
                 if k >= len(self.fn_labels):
@@ -66,18 +76,20 @@ class RetinaDataset(Dataset):
         return len(self.fn_labels)
 
 
+# 训练集路径
 train_path = 'process/train'
 fn_labels = getFn_Labels(train_path)
 retinaDataset = RetinaDataset(fn_labels)
 train_loader = DataLoader(retinaDataset, batch_size=8, shuffle=True)
 
-
-vgg19 = models.vgg19()
+# 加载预训练的VGG19模型并冻结参数
+vgg19 = models.vgg19(weights=VGG19_Weights.DEFAULT)
 vgg19_cnn = vgg19.features
 for param in vgg19_cnn.parameters():
     param.requires_grad = False  # 冻结参数
 
 
+# 定义Siamese Network
 class SiameseNet(nn.Module):
     def __init__(self):
         super().__init__()
@@ -108,6 +120,7 @@ class SiameseNet(nn.Module):
         return o1, o2
 
 
+# 定义损失函数
 class LossFunc(nn.Module):
     def __init__(self):
         super().__init__()
@@ -120,10 +133,11 @@ class LossFunc(nn.Module):
         return loss_
 
 
+# 初始化网络和优化器
 siameseNet = SiameseNet().to(device)
 optimizer = optim.Adam(siameseNet.parameters(), lr=0.001)
 
-
+# 训练网络
 for ep in range(30):
     for i, (img1, img2, label) in enumerate(train_loader):
         img1, img2, label = img1.to(device), img2.to(device), label.to(device)
@@ -136,6 +150,7 @@ for ep in range(30):
         optimizer.step()
 
 
+# 显示图像对比
 def showImage(stitle, fn1, fn2_):
     img1_ = np.array(Image.open(fn1).convert('RGB'))
     img2_ = np.array(Image.open(fn2_).convert('RGB'))
@@ -171,10 +186,10 @@ with torch.no_grad():
                 dist_min = dist.item()
                 label_min = label2
                 fn_min = fn2
-                cosine_similarity = F.cosine_similarity(pre_o1, pre_o2, dim=1)
-                similarity = (cosine_similarity.item() + 1) * 50
+                cosine_similarity = F.cosine_similarity(pre_o1, pre_o2, dim=1)  # 余弦相似度, [-1, 1]
+                similarity = (cosine_similarity.item() + 1) * 50  # [0, 100]
         correct += int(label == label_min)
         showImage('Similarity: %.2f%%' % dist_min, fn, fn_min)
 
-
-print('一共测试了{}张图片，准确率为{:.1f}%'.format(len(fn_labels), 100. * correct/len(fn_labels)))
+# 打印测试结果
+print('一共测试了{}张图片，准确率为{:.1f}%'.format(len(fn_labels), 100. * correct / len(fn_labels)))
